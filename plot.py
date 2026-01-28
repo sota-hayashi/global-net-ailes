@@ -226,6 +226,7 @@ def plot_yearly_margin_quantity_scatter(
     target = target.copy()
     target = target[target["cost"] != 0]
     target["margin_rate"] = (target["price"] - target["cost"]) / target["cost"]
+    target["gross_profit"] = (target["price"] - target["cost"]) * target["quantity"]
 
     yearly_product = (
         target.groupby("jan_code", as_index=False)
@@ -233,30 +234,90 @@ def plot_yearly_margin_quantity_scatter(
             margin_rate=("margin_rate", "mean"),
             avg_quantity=("quantity", "mean"),
             total_sales=("price", "sum"),
+            gross_profit=("gross_profit", "sum"),
         )
         .sort_values("margin_rate")
     )
 
-    total_sales = ((target["price"] - target["cost"]) * target["quantity"]).sum()
+    total_gross_profit = target["gross_profit"].sum()
     mean_quantity = target["quantity"].mean()
 
     yearly_product = yearly_product[yearly_product["avg_quantity"] > 0].copy()
     yearly_product["log10_avg_quantity"] = np.log10(yearly_product["avg_quantity"])
 
+    x_split = 0.45
+    y_split = 1.5
+    conditions = [
+        (yearly_product["margin_rate"] >= x_split)
+        & (yearly_product["log10_avg_quantity"] >= y_split),
+        (yearly_product["margin_rate"] < x_split)
+        & (yearly_product["log10_avg_quantity"] >= y_split),
+        (yearly_product["margin_rate"] < x_split)
+        & (yearly_product["log10_avg_quantity"] < y_split),
+        (yearly_product["margin_rate"] >= x_split)
+        & (yearly_product["log10_avg_quantity"] < y_split),
+    ]
+    quadrant_labels = ["Q1", "Q2", "Q3", "Q4"]
+    yearly_product["quadrant"] = np.select(conditions, quadrant_labels, default="Q?")
+
     fig, ax = plt.subplots(figsize=(8, 6))
-    ax.scatter(
-        yearly_product["margin_rate"],
-        yearly_product["log10_avg_quantity"],
-        color="steelblue",
-        alpha=0.7,
-    )
+    for quadrant, color in zip(
+        quadrant_labels, ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728"]
+    ):
+        subset = yearly_product[yearly_product["quadrant"] == quadrant]
+        ax.scatter(
+            subset["margin_rate"],
+            subset["log10_avg_quantity"],
+            color=color,
+            alpha=0.7,
+            # label=quadrant,
+        )
+        # for _, row in subset.iterrows():
+        #     ax.text(
+        #         row["margin_rate"],
+        #         row["log10_avg_quantity"],
+        #         quadrant,
+        #         fontsize=8,
+        #         color="black",
+        #         alpha=0.6,
+        #     )
     ax.set_xlabel("粗利率 (price - cost) / cost")
     ax.set_ylabel("平均個数 (log10)")
     ax.set_title(
         f"{order_year}年 粗利率×平均個数 散布図  "
-        f"総粗利: {total_sales:,.0f}  平均個数: {mean_quantity:.2f}"
+        f"総粗利: {total_gross_profit:,.0f}  平均個数: {mean_quantity:.2f}"
     )
     ax.grid(True, linestyle="--", alpha=0.4)
+    ax.axvline(x_split, color="gray", linestyle="--", linewidth=1)
+    ax.axhline(y_split, color="gray", linestyle="--", linewidth=1)
+    ax.legend()
+
+    x_min, x_max = ax.get_xlim()
+    y_min, y_max = ax.get_ylim()
+    positions = {
+        "Q1": ((x_split + x_max) / 2, (y_split + y_max) / 2),
+        "Q2": ((x_min + x_split) / 2, (y_split + y_max) / 2),
+        "Q3": ((x_min + x_split) / 2, (y_min + y_split) / 2),
+        "Q4": ((x_split + x_max) / 2, (y_min + y_split) / 2),
+    }
+    for quadrant, (x_pos, y_pos) in positions.items():
+        quad_profit = yearly_product.loc[
+            yearly_product["quadrant"] == quadrant, "gross_profit"
+        ].sum()
+        if total_gross_profit > 0:
+            ratio = quad_profit / total_gross_profit * 100
+            label = f"{quadrant}: {ratio:.1f}%"
+        else:
+            label = f"{quadrant}: n/a"
+        ax.text(
+            x_pos,
+            y_pos,
+            label,
+            color="red",
+            fontsize=10,
+            ha="center",
+            va="center",
+        )
 
     if output_path:
         fig.savefig(output_path, bbox_inches="tight")
