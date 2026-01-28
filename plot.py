@@ -210,6 +210,61 @@ def plot_product_structure_scatter(
     plt.close(fig)
 
 
+def plot_yearly_margin_quantity_scatter(
+    df: pd.DataFrame,
+    order_year: int,
+    output_path: str | None = None,
+    show: bool = True,
+) -> None:
+    target = df[df["order_year"] == order_year].dropna(
+        subset=["jan_code", "price", "cost", "quantity"]
+    )
+    target = target[target["quantity"] > 0]
+    if target.empty:
+        raise ValueError("指定条件に該当するデータがありません。")
+
+    target = target.copy()
+    target = target[target["cost"] != 0]
+    target["margin_rate"] = (target["price"] - target["cost"]) / target["cost"]
+
+    yearly_product = (
+        target.groupby("jan_code", as_index=False)
+        .agg(
+            margin_rate=("margin_rate", "mean"),
+            avg_quantity=("quantity", "mean"),
+            total_sales=("price", "sum"),
+        )
+        .sort_values("margin_rate")
+    )
+
+    total_sales = ((target["price"] - target["cost"]) * target["quantity"]).sum()
+    mean_quantity = target["quantity"].mean()
+
+    yearly_product = yearly_product[yearly_product["avg_quantity"] > 0].copy()
+    yearly_product["log10_avg_quantity"] = np.log10(yearly_product["avg_quantity"])
+
+    fig, ax = plt.subplots(figsize=(8, 6))
+    ax.scatter(
+        yearly_product["margin_rate"],
+        yearly_product["log10_avg_quantity"],
+        color="steelblue",
+        alpha=0.7,
+    )
+    ax.set_xlabel("粗利率 (price - cost) / cost")
+    ax.set_ylabel("平均個数 (log10)")
+    ax.set_title(
+        f"{order_year}年 粗利率×平均個数 散布図  "
+        f"総粗利: {total_sales:,.0f}  平均個数: {mean_quantity:.2f}"
+    )
+    ax.grid(True, linestyle="--", alpha=0.4)
+
+    if output_path:
+        fig.savefig(output_path, bbox_inches="tight")
+    if show:
+        plt.show()
+    plt.close(fig)
+
+
 def plot_margin_summary(
     df: pd.DataFrame,
     jan_code: str,
