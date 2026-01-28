@@ -1,4 +1,5 @@
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 from matplotlib.ticker import PercentFormatter, MaxNLocator
 import japanize_matplotlib
@@ -71,6 +72,136 @@ def plot_cost_price(
     ax.legend(h1 + h2, l1 + l2, loc="upper left")
 
     ax.grid(True, linestyle="--", alpha=0.4)
+
+    if output_path:
+        fig.savefig(output_path, bbox_inches="tight")
+    if show:
+        plt.show()
+    plt.close(fig)
+
+
+def _weighted_quantile(values: np.ndarray, weights: np.ndarray, quantiles: list[float]) -> np.ndarray:
+    mask = np.isfinite(values) & np.isfinite(weights)
+    values = values[mask]
+    weights = weights[mask]
+    if values.size == 0 or weights.sum() == 0:
+        return np.array([np.nan for _ in quantiles])
+
+    sorter = np.argsort(values)
+    values = values[sorter]
+    weights = weights[sorter]
+    cumulative = np.cumsum(weights)
+    targets = np.array(quantiles) * cumulative[-1]
+    return np.interp(targets, cumulative, values)
+
+
+def plot_weighted_gross_profit_boxplot(
+    df: pd.DataFrame,
+    output_path: str | None = None,
+    show: bool = True,
+) -> None:
+    if df.empty:
+        raise ValueError("データがありません。")
+
+    target = df.dropna(subset=["order_month", "price", "cost", "quantity"])
+    target = target[target["quantity"] > 0]
+    if target.empty:
+        raise ValueError("有効なデータがありません。")
+
+    target = target.copy()
+    target["gross_profit"] = target["price"] - target["cost"]
+
+    box_stats = []
+    months = sorted(target["order_month"].dropna().unique())
+    for month in months:
+        month_data = target[target["order_month"] == month]
+        values = month_data["gross_profit"].to_numpy()
+        weights = month_data["quantity"].to_numpy()
+        q1, med, q3 = _weighted_quantile(values, weights, [0.25, 0.5, 0.75])
+        if np.isnan(q1) or np.isnan(q3):
+            continue
+        iqr = q3 - q1
+        lower = q1 - 1.5 * iqr
+        upper = q3 + 1.5 * iqr
+        in_range = values[(values >= lower) & (values <= upper)]
+        whislo = in_range.min() if in_range.size else values.min()
+        whishi = in_range.max() if in_range.size else values.max()
+        box_stats.append(
+            {
+                "label": str(int(month)),
+                "med": med,
+                "q1": q1,
+                "q3": q3,
+                "whislo": whislo,
+                "whishi": whishi,
+                "fliers": [],
+            }
+        )
+
+    if not box_stats:
+        raise ValueError("箱ひげ図を作成できるデータがありません。")
+
+    fig, ax = plt.subplots(figsize=(10, 5))
+    ax.bxp(box_stats, showfliers=False)
+    ax.set_xlabel("月")
+    ax.set_ylabel("粗利 (円)")
+    ax.set_title("個数で重み付けした月別・粗利の箱ひげ図")
+    ax.grid(True, linestyle="--", alpha=0.4)
+
+    if output_path:
+        fig.savefig(output_path, bbox_inches="tight")
+    if show:
+        plt.show()
+    plt.close(fig)
+
+
+def plot_product_structure_scatter(
+    df: pd.DataFrame,
+    order_year: int,
+    output_path: str | None = None,
+    show: bool = True,
+) -> None:
+    target = df[df["order_year"] == order_year].dropna(
+        subset=["order_month", "jan_code", "price", "cost", "quantity"]
+    )
+    target = target[target["quantity"] > 0]
+    if target.empty:
+        raise ValueError("指定条件に該当するデータがありません。")
+
+    target = target.copy()
+    target["gross_profit"] = target["price"] - target["cost"]
+    target["sales"] = target["price"] * target["quantity"]
+
+    product_monthly = (
+        target.groupby(["order_month", "jan_code"], as_index=False)
+        .agg(
+            gross_profit=("gross_profit", "mean"),
+            quantity=("quantity", "sum"),
+            sales=("sales", "sum"),
+        )
+        .sort_values("order_month")
+    )
+
+    fig, ax = plt.subplots(figsize=(9, 6))
+    max_sales = product_monthly["sales"].max()
+    if max_sales > 0:
+        sizes = np.clip(product_monthly["sales"] / max_sales * 300, 20, 300)
+    else:
+        sizes = np.full(len(product_monthly), 50.0)
+    scatter = ax.scatter(
+        product_monthly["gross_profit"],
+        product_monthly["quantity"],
+        c=product_monthly["order_month"],
+        s=sizes,
+        cmap="tab20",
+        alpha=0.7,
+        edgecolors="none",
+    )
+    ax.set_xlabel("粗利 (円)")
+    ax.set_ylabel("販売個数")
+    ax.set_title(f"{order_year}年 月 × 粗利 × 個数の散布図")
+    ax.grid(True, linestyle="--", alpha=0.4)
+    fig.colorbar(scatter, ax=ax, label="月")
 
     if output_path:
         fig.savefig(output_path, bbox_inches="tight")

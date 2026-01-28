@@ -23,6 +23,10 @@ def load_dataframe(path: str) -> pd.DataFrame:
     }
     df = df.rename(columns={k: v for k, v in column_map.items() if k in df.columns})
 
+    for col in ("cost", "price", "quantity"):
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+
     ym = df["order_ym"].astype(str).str.strip()
     dt = pd.to_datetime(ym, format="%Y-%m", errors="coerce")
     df["order_year"] = dt.dt.year
