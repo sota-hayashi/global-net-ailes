@@ -6,6 +6,7 @@ from plot import (
     plot_margin_summary,
     plot_product_structure_scatter,
     plot_weighted_gross_profit_boxplot,
+    plot_yearly_margin_quantity_scatter,
 )
 
 
@@ -19,7 +20,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output", default=None)
     parser.add_argument(
         "--mode",
-        choices=["price", "margin", "weighted-box", "scatter"],
+        choices=["price", "margin", "weighted-box", "scatter", "yearly-scatter"],
         default="margin",
     )
     parser.add_argument("--no-show", action="store_true")
@@ -50,8 +51,15 @@ def main() -> None:
             output_path=args.output,
             show=not args.no_show,
         )
-    else:
+    elif args.mode == "scatter":
         plot_product_structure_scatter(
+            df,
+            order_year=args.year,
+            output_path=args.output,
+            show=not args.no_show,
+        )
+    else:
+        plot_yearly_margin_quantity_scatter(
             df,
             order_year=args.year,
             output_path=args.output,
