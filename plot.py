@@ -3,7 +3,62 @@ import numpy as np
 import pandas as pd
 from matplotlib.ticker import PercentFormatter, MaxNLocator
 import japanize_matplotlib
+from compute import get_top_10_margin_products
 
+def plot_top_10_margin_products_price(
+    df: pd.DataFrame,
+    order_year: int,
+    output_path: str | None = None,
+    show: bool = True,
+) -> None:
+    """
+    指定された年の粗利上位10商品の価格の時系列変化をプロットする。
+    """
+    top_10_df = get_top_10_margin_products(
+        df[df["order_year"] == order_year]
+    )
+    if top_10_df.empty:
+        raise ValueError("指定条件に該当するデータがありません。")
+
+    top_10_jans = top_10_df["jan_code"].unique()
+    top_10_margin = top_10_df["total_margin"].unique()
+    
+    # 上位10商品の月別平均価格を計算
+    monthly_prices = df[
+        (df["order_year"] == order_year) & (df["jan_code"].isin(top_10_jans))
+    ].groupby(["jan_code", "order_month", "product-name", "product-spec"], as_index=False).agg(
+        avg_price=("price", "mean")
+    ).sort_values("order_month")
+
+    fig, ax = plt.subplots(figsize=(12, 7))
+
+    # 各商品についてプロット
+    for jan_code in top_10_jans:
+        product_data = monthly_prices[monthly_prices["jan_code"] == jan_code]
+        if not product_data.empty:
+            product_name = product_data["product-name"].iloc[0]
+            product_spec = product_data['product-spec'].iloc[0]
+            ax.plot(
+                product_data["order_month"],
+                product_data["avg_price"],
+                marker="o",
+                linestyle="-",
+                label=f"{product_name} {product_spec} {top_10_margin[top_10_jans.tolist().index(jan_code)]:,.0f}円" # 長すぎる商品名を省略
+            )
+
+    ax.set_xlabel("月")
+    ax.set_ylabel("平均売価 (円)")
+    ax.set_title(f"{order_year}年 粗利上位10商品の月別売価推移")
+    ax.tick_params(axis="x")
+    ax.grid(True, linestyle="--", alpha=0.6)
+    ax.legend(title="商品", bbox_to_anchor=(1.05, 1), loc='upper left')
+    plt.tight_layout(rect=[0, 0, 0.85, 1]) # 凡例が収まるように調整
+
+    if output_path:
+        fig.savefig(output_path, bbox_inches="tight")
+    if show:
+        plt.show()
+    plt.close(fig)
 
 def plot_cost_price(
     df: pd.DataFrame,
@@ -16,6 +71,10 @@ def plot_cost_price(
     target = df[(df["order_year"] == order_year) & (jan_series == str(jan_code))]
     if target.empty:
         raise ValueError("指定条件に該当するデータがありません。")
+    target["total_cost_row"] = target["cost"] * target["quantity"]
+    target["total_price_row"] = target["price"] * target["quantity"]
+    target["total_margin_row"] = target["total_price_row"] - target["total_cost_row"]
+    target["total_margin"] = target["total_margin_row"].sum()
 
     monthly = (
         target.groupby("order_month", as_index=False)
@@ -62,7 +121,7 @@ def plot_cost_price(
     ax.set_ylabel("価格 (円)")
 
     ax.set_title(
-        f"{order_year}年 {target.iloc[0]['product-name']} {target.iloc[0]['product-spec']} の月別原価/売価と個数"
+        f"{order_year}年 {target.iloc[0]['product-name']} {target.iloc[0]['product-spec']} の月別原価/売価と個数，総粗利: {target['total_margin'].values[0]:,.0f}円"
     )
     ax.set_xticks(sorted(monthly["order_month"].unique()))
 
@@ -325,6 +384,43 @@ def plot_yearly_margin_quantity_scatter(
         plt.show()
     plt.close(fig)
 
+def plot_gross_profit_monthly(
+    df: pd.DataFrame,
+    order_year: int,
+    jan_code: str,
+    output_path: str | None = None,
+    show: bool = True,
+) -> None:
+    jan_series = df["jan_code"].astype(str).str.strip()
+    target = df[(df["order_year"] == order_year) & (jan_series == str(jan_code))]
+    if target.empty:
+        raise ValueError("指定条件に該当するデータがありません。")
+
+    monthly = (
+        target.groupby("order_month", as_index=False)
+        .agg(
+            cost=("cost", "mean"),
+            price=("price", "mean"),
+            count=("quantity", "sum"),)
+        .sort_values("order_month")
+    )
+
+    monthly["gross_profit"] = (monthly["price"] - monthly["cost"]) * monthly["count"]
+
+    fig, ax = plt.subplots(figsize=(8, 6))
+    ax.plot(monthly["order_month"], monthly["gross_profit"], color="grey", marker="o", label="粗利益")
+    ax.set_xlabel("月")
+    ax.set_ylabel("粗利益 (円)")
+    ax.set_title(f"{order_year}年 {target.iloc[0]['product-name']} {target.iloc[0]['product-spec']} の月別粗利益")
+    ax.set_xticks(sorted(monthly["order_month"].unique()))
+    ax.legend()
+    ax.grid(True, linestyle="--", alpha=0.4)
+
+    if output_path:
+        fig.savefig(output_path, bbox_inches="tight")
+    if show:
+        plt.show()
+    plt.close(fig)
 
 def plot_margin_summary(
     df: pd.DataFrame,

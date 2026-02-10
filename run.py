@@ -7,6 +7,8 @@ from plot import (
     plot_product_structure_scatter,
     plot_weighted_gross_profit_boxplot,
     plot_yearly_margin_quantity_scatter,
+    plot_top_10_margin_products_price,
+    plot_gross_profit_monthly,
 )
 
 
@@ -20,7 +22,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output", default=None)
     parser.add_argument(
         "--mode",
-        choices=["price", "margin", "weighted-box", "scatter", "yearly-scatter"],
+        choices=["price", "margin", "weighted-box", "scatter", "yearly-scatter", "top-10-price", "gross-profit-monthly"],
         default="margin",
     )
     parser.add_argument("--no-show", action="store_true")
@@ -32,6 +34,14 @@ def main() -> None:
     df = load_dataframe(args.file)
     if args.mode == "price":
         plot_cost_price(
+            df,
+            order_year=args.year,
+            jan_code=args.jan,
+            output_path=args.output,
+            show=not args.no_show,
+        )
+    elif args.mode == "gross-profit-monthly":
+        plot_gross_profit_monthly(
             df,
             order_year=args.year,
             jan_code=args.jan,
@@ -53,6 +63,13 @@ def main() -> None:
         )
     elif args.mode == "scatter":
         plot_product_structure_scatter(
+            df,
+            order_year=args.year,
+            output_path=args.output,
+            show=not args.no_show,
+        )
+    elif args.mode == "top-10-price":
+        plot_top_10_margin_products_price(
             df,
             order_year=args.year,
             output_path=args.output,
