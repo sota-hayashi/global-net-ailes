@@ -11,6 +11,8 @@ from plot import (
     plot_gross_profit_monthly,
 )
 
+from compute import cosine_similarity_top_margin_products
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -22,7 +24,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output", default=None)
     parser.add_argument(
         "--mode",
-        choices=["price", "margin", "weighted-box", "scatter", "yearly-scatter", "top-10-price", "gross-profit-monthly"],
+        choices=["price", "margin", "weighted-box", "scatter", "yearly-scatter", "top-10-price", "gross-profit-monthly", "cosine-similarity"],
         default="margin",
     )
     parser.add_argument("--no-show", action="store_true")
@@ -74,6 +76,14 @@ def main() -> None:
             order_year=args.year,
             output_path=args.output,
             show=not args.no_show,
+        )
+    elif args.mode == "cosine-similarity":
+        cosine_similarity_top_margin_products(
+            df,
+            order_year=args.year,
+            top_n=500,
+            fill_missing="impute",
+            threshold_method="fixed"   # 文献例(0.2)
         )
     else:
         plot_yearly_margin_quantity_scatter(
